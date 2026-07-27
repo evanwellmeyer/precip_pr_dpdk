@@ -4,3 +4,5 @@ AMS LaTeX Package V6.1/
 /figures/
 .DS_Store
 vit.py
+tmp/
+docs/
