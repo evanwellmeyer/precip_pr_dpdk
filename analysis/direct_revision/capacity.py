@@ -1,27 +1,25 @@
 from pathlib import Path
+from analysis.paths import research, project
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
 
-WEIGHTS_BASE = Path("/Users/ewellmeyer/Documents/research/weights")
-OUT_DIR = Path("AMS LaTeX Package V6.1/figures")
+WEIGHTS_BASE = Path(str(research / "weights/direct_dpdk_bilinear"))
+OUT_DIR = Path("analysis/direct_revision/figures")
 
-CHANNELS = [8, 16, 32, 64, 128, 256]
+CHANNELS = [8, 16, 32, 64, 128]
 DROP_FORMATS = [
     {"suffix": "", "label": "0", "color": "#3B73B9", "marker": "o"},
     {"suffix": "_dr0.1", "label": "0.10", "color": "#D77927", "marker": "s"},
 ]
 
-RUN_TEMPLATE = (
-    "unet_ens_HG789_PR_dPdK_Softmax_unet6R_ch{ch}_k3_"
-    "128x_dPbins64_gn1_dpmin-700_dPmax1200_sigma0.6{suffix}"
-)
+RUN_TEMPLATE = "unet_direct_dpdk_flat_ch{ch}_k3_bins64_min-700_max1200_sigma0.6_dropout{suffix}"
 
 
 def run_dir(ch, suffix):
-    return WEIGHTS_BASE / RUN_TEMPLATE.format(ch=ch, suffix=suffix)
+    return WEIGHTS_BASE / RUN_TEMPLATE.format(ch=ch, suffix="0.1" if suffix else "0")
 
 
 def pct_improve(baseline_rmse, model_rmse):
@@ -31,20 +29,20 @@ def pct_improve(baseline_rmse, model_rmse):
 
 
 def load_result(ch, suffix):
-    path = run_dir(ch, suffix) / "softmax_ensemble_analysis_arrays.npz"
+    path = run_dir(ch, suffix) / "test_results.npz"
     if not path.exists():
         raise FileNotFoundError(path)
 
     data = np.load(path)
     idx = data["test_indices"]
-    good = set(data["good_members"].astype(int).tolist())
+    good = set(data["good_seeds"].astype(int).tolist())
 
-    ppe = data["rmse_ppe"][idx]
-    ppe_land = data["rmse_ppe_land"][idx]
-    ens = data["rmse_softmax_mean"][idx]
-    ens_land = data["rmse_softmax_mean_land"][idx]
-    members = data["rmse_softmax_members"][:, idx]
-    members_land = data["rmse_softmax_members_land"][:, idx]
+    ppe = data["baseline_global_rmse"][idx]
+    ppe_land = data["baseline_land_rmse"][idx]
+    ens = data["seed_mean_global_rmse"][idx]
+    ens_land = data["seed_mean_land_rmse"][idx]
+    members = data["seed_global_rmse"][:, idx]
+    members_land = data["seed_land_rmse"][:, idx]
 
     return {
         "ens_global": float(np.nanmedian(pct_improve(ppe, ens))),
@@ -68,7 +66,7 @@ def configure_axis(ax, ylabel=None):
     ax.set_xscale("log", base=2)
     ax.set_xticks(CHANNELS)
     ax.set_xticklabels([str(ch) for ch in CHANNELS])
-    ax.set_xlim(7, 285)
+    ax.set_xlim(7, 145)
     ax.set_ylim(0, 30)
     ax.set_yticks([0, 5, 10, 15, 20, 25, 30])
     ax.set_xlabel("Base channel width")
@@ -87,8 +85,8 @@ def make_main_figure(records):
         "axes.labelsize": 9.5,
         "xtick.labelsize": 8.5,
         "ytick.labelsize": 8.5,
-        "legend.fontsize": 8.0,
-        "legend.title_fontsize": 8.0,
+        "legend.fontsize": 9.0,
+        "legend.title_fontsize": 9.0,
     })
 
     fig, axes = plt.subplots(1, 2, figsize=(7.5, 3.55), sharey=True)
@@ -111,16 +109,15 @@ def make_main_figure(records):
                 vals.append(rec[ens_key])
                 for i, val in enumerate(rec[seed_key]):
                     jitter = seed_jitter[i] if i < len(seed_jitter) else 0.0
-                    retained = i in rec["good"]
                     ax.scatter(
                         ch * (2 ** (offsets[suffix] + jitter)),
                         val,
                         s=15,
                         marker=cfg["marker"],
-                        facecolor=cfg["color"] if retained else "white",
+                        facecolor=cfg["color"],
                         edgecolor=cfg["color"],
                         linewidth=0.65,
-                        alpha=0.33 if retained else 0.85,
+                        alpha=0.33,
                         zorder=2,
                     )
 
@@ -136,18 +133,6 @@ def make_main_figure(records):
                 solid_capstyle="round",
                 zorder=4,
             )
-
-        adopted = records["_dr0.1"][128][ens_key]
-        ax.scatter(
-            [128 * (2 ** offsets["_dr0.1"])],
-            [adopted],
-            s=50,
-            marker="^",
-            facecolor="#2A9D55",
-            edgecolor="black",
-            linewidth=1.05,
-            zorder=5,
-        )
 
         ax.set_title(title, pad=5)
         configure_axis(ax, "Median per-member RMSE improvement (%)" if ax is axes[0] else None)
@@ -172,7 +157,7 @@ def make_main_figure(records):
             marker="o",
             lw=2.0,
             ms=5.7,
-            label="ensemble mean",
+            label="NN seed mean",
         ),
         Line2D(
             [0],
@@ -182,17 +167,7 @@ def make_main_figure(records):
             markerfacecolor="0.25",
             linestyle="None",
             ms=4.8,
-            label="retained seed",
-        ),
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="0.25",
-            markerfacecolor="white",
-            linestyle="None",
-            ms=4.8,
-            label="filtered seed",
+            label="individual seed",
         ),
     ]
 
@@ -230,7 +205,7 @@ def print_summary(records):
             rec = records[cfg["suffix"]][ch]
             print(
                 f"  {ch:>3} ch: global={rec['ens_global']:5.2f}, "
-                f"land={rec['ens_land']:5.2f}, retained={len(rec['good'])}/{rec['n_seed']}"
+                f"land={rec['ens_land']:5.2f}, included={len(rec['good'])}/{rec['n_seed']}"
             )
 
 

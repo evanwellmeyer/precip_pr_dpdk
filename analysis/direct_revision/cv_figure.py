@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from analysis.paths import research, project
 
 MPLCONFIGDIR = Path("/tmp/matplotlib")
 MPLCONFIGDIR.mkdir(parents=True, exist_ok=True)
@@ -18,15 +19,12 @@ import xarray as xr
 
 
 PPE_FAMILIES = ["GA7", "GA8", "GA9"]
-TRUTH_FILE = Path("/Users/ewellmeyer/Documents/research/HadGEM/GA789_dPdK_rg128.nc")
-WEIGHTS_BASE = Path("/Users/ewellmeyer/Documents/research/weights")
+TRUTH_FILE = Path(str(research / "HadGEM/GA789_dPdK_bilinear_rg128.nc"))
+WEIGHTS_BASE = Path(str(research / "weights/direct_dpdk_bilinear_cv"))
 
 # This run matches the leave-one-PPE-out values reported in the manuscript table.
-CV_RUN = (
-    "unet_cv_HG789_PR_dPdK_Softmax_unet6R_flat_ch100_k3_128x_"
-    "dPbins64_gn1_dpmin-700_dPmax1200"
-)
-OUT_PATH = Path("AMS LaTeX Package V6.1/supp_figures/figS4.png")
+CV_RUN = "unet_direct_dpdk_cv_flat_ch64_k3_bins64_min-700_max1200_sigma0.6_dropout0.1"
+OUT_PATH = Path("analysis/direct_revision/supp_figures/figS4.png")
 
 
 def rmse_improvement(baseline_rmse, model_rmse):
@@ -52,30 +50,13 @@ def load_truth():
 
 
 def fold_improvements(fold, y_all):
-    arr_path = WEIGHTS_BASE / CV_RUN / f"fold_{fold}" / "cv_results.npz"
-    if not arr_path.exists():
-        raise FileNotFoundError(arr_path)
-
+    arr_path = WEIGHTS_BASE / CV_RUN / f"fold_{fold}" / "test_results.npz"
     with np.load(arr_path) as arr:
-        all_mu = arr["all_mu"]
-        y_test = arr["y_test"]
-        good_members = arr["good_members"]
-        train_indices = arr["train_indices"]
-        lat_weights = arr["lat_weights"]
-        landmask = arr["landmask"]
-
-    ppe_mean = y_all[train_indices].mean(axis=0, keepdims=True)
-    ens_mu = all_mu[good_members].mean(axis=0)
-
-    se_w_ppe = (ppe_mean - y_test) ** 2 * lat_weights[None, :, None]
-    se_w_ens = (ens_mu - y_test) ** 2 * lat_weights[None, :, None]
-
-    ppe_rmse_global = np.sqrt(se_w_ppe.mean(axis=(1, 2)))
-    ens_rmse_global = np.sqrt(se_w_ens.mean(axis=(1, 2)))
-
-    denom_land = float((landmask * lat_weights[:, None]).sum() + 1e-12)
-    ppe_rmse_land = np.sqrt((se_w_ppe * landmask[None]).sum(axis=(1, 2)) / denom_land)
-    ens_rmse_land = np.sqrt((se_w_ens * landmask[None]).sum(axis=(1, 2)) / denom_land)
+        ppe_rmse_global = arr["baseline_global_rmse"]
+        ens_rmse_global = arr["seed_mean_global_rmse"]
+        ppe_rmse_land = arr["baseline_land_rmse"]
+        ens_rmse_land = arr["seed_mean_land_rmse"]
+        y_test = arr["test_indices"]
 
     table_like = {
         "Fold": fold,

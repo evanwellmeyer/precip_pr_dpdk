@@ -1,0 +1,21 @@
+name: precip-pr-dpdk
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - xarray
+  - scipy
+  - scikit-learn
+  - pandas
+  - matplotlib
+  - seaborn
+  - cartopy
+  - xesmf
+  - esmpy
+  - netcdf4
+  - ipython
+  - tqdm
+  - pip
+  - pip:
+      - torch
